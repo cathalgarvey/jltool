@@ -1,5 +1,6 @@
 import os
 import sys
+import jltool
 from setuptools import setup
 
 if sys.version_info < (3,):
@@ -12,7 +13,7 @@ setup(
     name='jltool',
     description="Tools for inspecting, comparing, & cleaning JSON-Lines files",
     long_description=long_description,
-    version="1.0.0",
+    version=jltool.__version__,
     url="https://github.com/cathalgarvey/jltool",
     author="Cathal Garvey",
     author_email="cathalgarvey@cathalgarvey.me",
