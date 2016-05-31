@@ -44,6 +44,21 @@ Number of Duplicates: 0
 Common keys: {'type': {'string'}, 'value': {'string'}, 'meta': {'object'}}
 ```
 
+#### Filtering Reports
+The `grep` subcommand allows the use of objectpath queries to filter a JSONL file.
+The objectpath query must evaluate to a boolean. If desired, deduplication
+may be done prior to selection, by passing a `-s` selector by which to deduplicate
+records, but if no `-s` selector is given then no deduplication is performed.
+
+```bash
+$ cat records.jsonl
+{"type": "email", "value": "foo@bar.com", "meta": {}}
+{"type": "twitter", "value": "onetruecathal", "meta": {"awesomeness": 9001}}
+{"type": "email", "value": "baz@qux.tld", "meta": {"lol": "wut"}}
+$ jltool grep '$.type is "twitter"' records.jsonl
+{"type": "twitter", "value": "onetruecathal", "meta": {"awesomeness": 9001}}
+```
+
 #### Difference Between Two files
 The `diff` command reports records that are present in one file and not the
 other. This is done without regard to order, and hashes or representative
