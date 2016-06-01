@@ -21,7 +21,12 @@ _human_types = {
 
 
 class Deduper:
+    """
+    Assists in deduplicating objects, using objectpath queries to detect dupes.
+    """
+
     def __init__(self, selector=''):
+        "Creates a deduplicator with a given selector. If not given, uses md5."
         self.selector = selector
         self.seen = {}
         self.processed = 0
@@ -38,22 +43,25 @@ class Deduper:
 
     @property
     def dupes(self):
+        "Returns the number of duplicates encountered so far"
         return self.processed - len(self.seen)
 
 
 def load_jsonlines(serial_line_iterable: ([str], _file))->[(dict, list)]:
+    "Yield successive parsed objects from a JSONL iterable"
     for line in serial_line_iterable:
         if line and not line.isspace():
             yield json.loads(line)
 
 
-def hashobj(obj: (list, dict))->str:
-    #Not intended to be resistant to deliberate collision. MD5 is not a secure hash.
+def _hashobj(obj: (list, dict))->str:
+    # Not intended to be resistant to deliberate collision. MD5 is not secure.
     ordered = json.dumps(obj, separators=(",", ":"), sort_keys=True)
     return hashlib.md5(ordered.encode()).hexdigest()
 
 
 def objectpath_extract(obj: (list, dict), selector: str)->str:
+    "Execute an objectpath expression to extract a hashable object"
     T = objectpath.Tree(obj)
     val = T.execute(selector)
     assert isinstance(val, collections.abc.Hashable), \
@@ -66,7 +74,7 @@ def line_to_unique_id(obj: (list, dict), selector: str='')->_Hashable:
     if selector:
         return objectpath_extract(obj, selector)
     else:
-        return hashobj(obj)
+        return _hashobj(obj)
 
 
 def _indent_if(prettify: bool)->(int, None):
@@ -75,7 +83,7 @@ def _indent_if(prettify: bool)->(int, None):
 
 
 def dupes_cmd(file1, selector='', prettify=False, **_):
-    "Dedupe assists in finding duplicate records, reporting duplicates by line."
+    "Dedupe assists in finding duplicate records, reporting duplicates by line"
     DD = Deduper(selector=selector)
     for seen, previous in dupes(load_jsonlines(file1), deduper=DD):
         print("Duplicate of line {0:3} at lines: {1}".format(seen, previous))
@@ -84,21 +92,23 @@ def dupes_cmd(file1, selector='', prettify=False, **_):
 
 
 def dupes(record_iterator, deduper=None, selector='', prettify=False, **_):
-    "Dedupe assists in finding duplicate records, reporting duplicates by line."
+    "Dedupe assists in finding duplicate records, reporting duplicates by line"
     DD = deduper or Deduper(selector=selector)
     for n, l in enumerate(record_iterator):
-        seen = deduper.search_priors(n, l)
+        seen = DD.search_priors(n, l)
         if seen:
             yield seen[0], seen[1:] + [n]
 
 
 def diff_cmd(file1, file2, selector='', prettify=False, **_):
+    "Print successive lines unique to the left or right file"
     f1lines = load_jsonlines(file1)
     f2lines = load_jsonlines(file2)
-    for dirxn, (lineno, line) in diff(f1lines, f2lines, selector):
+    for drxn, (lno, line) in diff(f1lines, f2lines, selector):
         pl = json.dumps(line, indent=_indent_if(prettify), sort_keys=True)
-        for line in pl.splitlines():
-            print("{0}{1:4}:".format("<<<" if dirxn == "L" else ">>>", lineno), line)
+        for ln in pl.splitlines():
+            dirlns = "<<<" if drxn == "L" else ">>>"
+            print("{0}{1:4}:".format(dirlns, lno), ln)
 
 
 def diff(iterator1, iterator2, selector=''):
@@ -159,6 +169,9 @@ def clean_cmd(file1, selector='', **_):
 
 
 def dedupe(iterator, selector=''):
+    """
+    Yield deduped objects from iterator, with optional selector to detect dupes
+    """
     DD = Deduper(selector=selector)
     for l, obj in enumerate(iterator):
         if DD.search_priors(l, obj):
@@ -167,21 +180,42 @@ def dedupe(iterator, selector=''):
 
 
 def grep_cmd(file1, expression='', selector='', **_):
+    "Print lines matching expression from file1"
     for obj in grep(load_jsonlines(file1), expression, selector):
         line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
         print(line)
 
 
-def grep(iterator, expression='', selector=''):
-    DD = Deduper(selector=selector) if selector else None
+def grep(iterator, expression, sel=''):
+    "Yield successive matching objects from iterator, deduped by sel if given"
+    DD = Deduper(selector=sel) if sel else None
     for l, obj in enumerate(iterator):
-        if selector and DD.search_priors(l, obj):
+        if sel and DD.search_priors(l, obj):
             continue
         T = objectpath.Tree(obj)
         val = T.execute(expression)
-        assert isinstance(val, bool), "Objectpath expression must evaluate to Boolean"
+        assert isinstance(val, bool), "Expression must evaluate to Boolean"
         if val:
             yield obj
+
+
+def extract_cmd(file1, expression='', selector='', **_):
+    "Print lines matching expression from file1"
+    for obj in extract(load_jsonlines(file1), expression, selector):
+        line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
+        print(line)
+
+
+def extract(iterator, expression, sel=''):
+    "Extract uses an objectpath query to extract information from records."
+    DD = Deduper(selector=sel) if sel else None
+    for l, obj in enumerate(iterator):
+        if sel and DD.search_priors(l, obj):
+            continue
+        T = objectpath.Tree(obj)
+        val = T.execute(expression)
+        if val:
+            yield val
 
 
 def _main():
@@ -239,19 +273,31 @@ def _main():
     clean.add_argument("file1", type=argparse.FileType("r"),
                        help="File to read from")
     # == Grep ==
-    clean = SP.add_parser("grep", help="Filter a JL file using objectpath.")
-    clean.set_defaults(func=grep_cmd)
-    clean.add_argument("expression", default='', type=str, help=_dd(
+    grepc = SP.add_parser("grep", help="Filter a JL file using objectpath.")
+    grepc.set_defaults(func=grep_cmd)
+    grepc.add_argument("expression", default='', type=str, help=_dd(
                        """Objectpath expression to select lines to emit. The \
                        expression takes place after deduplication by -s, if \
                        given, and the expression must evaluate to a boolean \
                        in objectpath."""))
-    clean.add_argument("-s", "--selector", default='', type=str, help=_dd(
+    grepc.add_argument("-s", "--selector", default='', type=str, help=_dd(
                        """Objectpath selector to extract a representative, \
-                       unique string from JSON objects. If unspecified, then \
-                       objects are hashed as normalised JSON to get a unique \
-                       value."""))
-    clean.add_argument("file1", type=argparse.FileType("r"),
+                       unique string from JSON objects for deduplication. \
+                       If empty, deduping is not performed in this mode."""))
+    grepc.add_argument("file1", type=argparse.FileType("r"),
+                       help="File to read from")
+    # == Extract ==
+    extr = SP.add_parser("extract", help="Extract data from objects.")
+    extr.set_defaults(func=extract_cmd)
+    extr.add_argument("expression", default='', type=str, help=_dd(
+                       """Objectpath expression to extract data to emit. The \
+                       expression takes place after deduplication by -s, if \
+                       given."""))
+    extr.add_argument("-s", "--selector", default='', type=str, help=_dd(
+                       """Objectpath selector to extract a representative, \
+                       unique string from JSON objects for deduplication. \
+                       If empty, deduping is not performed in this mode."""))
+    extr.add_argument("file1", type=argparse.FileType("r"),
                        help="File to read from")
     # == Execute ==
     args = P.parse_args()
