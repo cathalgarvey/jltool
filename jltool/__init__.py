@@ -202,6 +202,9 @@ def grep(iterator, expression, sel=''):
 def extract_cmd(file1, expression='', selector='', **_):
     "Print lines matching expression from file1"
     for obj in extract(load_jsonlines(file1), expression, selector):
+        if isinstance(obj, (str, int, float, bool)):
+            print(obj)
+            continue
         line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
         print(line)
 
