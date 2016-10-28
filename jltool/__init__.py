@@ -5,6 +5,9 @@ import collections
 import objectpath
 import io
 import textwrap
+import csv
+import sys
+import itertools
 
 __version__ = "1.1.0"
 _file = io.TextIOWrapper
@@ -16,7 +19,8 @@ _human_types = {
     float: "float",
     bool: "boolean",
     dict: "object",
-    list: "list"
+    list: "list",
+    type(None): "null"
 }
 
 
@@ -153,17 +157,19 @@ def report_cmd(file1, selector='', **_):
                     key, set([_human_types[type(value)]])
                     ).add(_human_types[type(value)])
     else:
+        if 'lineno' not in locals():  # Patch over an UnboundLocalError
+            lineno = 0
         print("Number of records:", lineno)
         print("Number of Duplicates:", DD.dupes)
     print("Common keys:", {key: key_types[key] for key in common_keys})
-    for key, values in key_types.items():
+    for key, values in sorted(key_types.items()):
         if len(values) > 1:
             print("Inconsistent types for key '{0}': {1}".format(key, values))
 
 
 def clean_cmd(file1, selector='', **_):
     "Deduplicate, order, and minimise objects in a JSONL file"
-    for obj in dedupe(load_jsonlines(file1)):
+    for obj in dedupe(load_jsonlines(file1), selector=selector):
         line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
         print(line)
 
@@ -207,6 +213,22 @@ def extract_cmd(file1, expression='', selector='', **_):
             continue
         line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
         print(line)
+
+
+def csv_cmd(file1, expressions=[], headers=[], selector='', **_):
+    "Print comma-separated values matching the expression list"
+    csvout = csv.writer(sys.stdout, dialect="unix")
+    if headers:
+        assert len(headers) == len(expressions), "Header list for CSV output provided but does not match selector list."
+        csvout.writerow(headers)
+    obj_iter = load_jsonlines(file1)
+    many_iters = itertools.tee(obj_iter, len(expressions))
+    streams = []
+    for itr, expr in zip(many_iters, expressions):
+        extr = extract(itr, expr, sel=selector)
+        streams.append(extr)
+    for row in zip(*streams):
+        csvout.writerow(row)
 
 
 def extract(iterator, expression, sel=''):
@@ -302,9 +324,30 @@ def _main():
                        If empty, deduping is not performed in this mode."""))
     extr.add_argument("file1", type=argparse.FileType("r"),
                        help="File to read from")
+    # == CSV Export Mode ==
+    csvm = SP.add_parser("csv", help="Extract many data as CSV columns")
+    csvm.set_defaults(func=csv_cmd)
+    csvm.add_argument("expressions", type=str, nargs="+", default=[], help=_dd(
+                       """Objectpath expressions to extract 1+ columns \
+                       to emit. The expressions take place after \
+                       deduplication by -s, if given."""))
+    csvm.add_argument("-s", "--selector", default='', type=str, help=_dd(
+                       """Objectpath selector to extract a representative, \
+                       unique string from JSON objects for deduplication. \
+                       If empty, deduping is not performed in this mode."""))
+    csvm.add_argument("-H", "--headers", default=[], type=str, nargs="+",
+                      help="Optional headers to emit at start of CSV file.")
+    csvm.add_argument("file1", type=argparse.FileType("r"),
+                       help="File to read from")
     # == Execute ==
     args = P.parse_args()
-    args.func(**vars(args))
+    try:
+        args.func(**vars(args))
+    except BrokenPipeError:
+        # For e.g. when piping to "head"
+        # Probably in most cases this exception is
+        # just noise, so bury it.
+        pass
 
 
 if __name__ == "__main__":
