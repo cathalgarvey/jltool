@@ -240,7 +240,7 @@ def iota_cmd(file1, key, value_expression, selector='', **_):
 
 def iota(iterator, key, value_expression, sel=''):
     """
-    iota adds a new dynamically-constructed item to each object in a JSON-Lines stream
+    iota adds a new dynamically-constructed item to each object in a stream
 
     (This is not especially useful as a Python function, of course)
 
@@ -248,7 +248,7 @@ def iota(iterator, key, value_expression, sel=''):
     The value of the item is constructed with ObjectPath. To facilitate
     a common use-case, a special value '$.__iota' is made available within
     ObjectPath for this operation; this is removed afterwards from the object.
-    The `$.__iota` value is equal to the zero-indexed line-number of the object.
+    The `$.__iota` value is equal to the 0-indexed line-number of the object.
     """
     DD = Deduper(selector=sel) if sel else None
     iotify = lambda d, j: dict(list(d.items()) + [("__iota", j)])
@@ -355,35 +355,36 @@ def _main():
                        unique string from JSON objects for deduplication. \
                        If empty, deduping is not performed in this mode."""))
     extr.add_argument("file1", type=argparse.FileType("r"),
-                       help="File to read from")
+                      help="File to read from")
     # == CSV Export Mode ==
     csvm = SP.add_parser("csv", help="Extract many data as CSV columns")
     csvm.set_defaults(func=csv_cmd)
     csvm.add_argument("expressions", type=str, nargs="+", default=[], help=_dd(
-                       """Objectpath expressions to extract 1+ columns \
-                       to emit. The expressions take place after \
-                       deduplication by -s, if given."""))
+                      """Objectpath expressions to extract 1+ columns \
+                      to emit. The expressions take place after \
+                      deduplication by -s, if given."""))
     csvm.add_argument("-s", "--selector", default='', type=str, help=_dd(
-                       """Objectpath selector to extract a representative, \
-                       unique string from JSON objects for deduplication. \
-                       If empty, deduping is not performed in this mode."""))
+                      """Objectpath selector to extract a representative, \
+                      unique string from JSON objects for deduplication. \
+                      If empty, deduping is not performed in this mode."""))
     csvm.add_argument("-H", "--headers", default=[], type=str, nargs="+",
                       help="Optional headers to emit at start of CSV file.")
     csvm.add_argument("file1", type=argparse.FileType("r"),
-                       help="File to read from")
+                      help="File to read from")
     # == Iota Mode ==
-    iotam = SP.add_parser("iota", help="Dynamically add a key:value pair to each object")
+    iotam = SP.add_parser("iota", help=_dd(
+                          "Dynamically add a key:value pair to each object"))
     iotam.set_defaults(func=iota_cmd)
     iotam.add_argument("key", type=str, help=_dd(
                        "Key to add new value as. May overwrite other keys."))
     iotam.add_argument("value_expression", type=str, help=_dd(
-                        """Objectpath selector that can construct the new
-                        value. This selector may assume the existence of a
-                        special key, `$.__iota`, which is equal to the
-                        (zero-indexed) position of the object in the JSON-Lines
-                        file. So, the value will be `0` for the first object,
-                        and `9` for the tenth object, etc.
-                        """))
+                       """Objectpath selector that can construct the new
+                       value. This selector may assume the existence of a
+                       special key, `$.__iota`, which is equal to the
+                       (zero-indexed) position of the object in the JSON-Lines
+                       file. So, the value will be `0` for the first object,
+                       and `9` for the tenth object, etc.
+                       """))
     iotam.add_argument("-s", "--selector", default='', type=str, help=_dd(
                        """Objectpath selector to extract a representative, \
                        unique string from JSON objects for deduplication. \
