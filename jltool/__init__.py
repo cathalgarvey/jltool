@@ -231,6 +231,50 @@ def csv_cmd(file1, expressions=[], headers=[], selector='', **_):
         csvout.writerow(row)
 
 
+def iota(iterator, key, expression):
+    for l, obj in enumerate(iterator):
+        objcpy = obj.copy()
+        objcpy['__iota'] = l
+        T = objectpath.Tree(objcpy)
+        val = T.execute(expression)
+        objcpy[key] = val
+        objcpy.pop('__iota')
+        yield objcpy
+
+
+
+def iota_cmd(file1, key, value_expression, selector='', **_):
+    obj_stream = load_jsonlines(file1)
+    for obj in iota(obj_stream, key, value_expression, sel=selector):
+        line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
+        print(line)
+        # BLAH
+
+def iota(iterator, key, value_expression, sel=''):
+    """
+    iota adds a new dynamically-constructed item to each object in a JSON-Lines stream
+
+    (This is not especially useful as a Python function, of course)
+
+    This 'new' item is stored as a key, and may replace an existing key.
+    The value of the item is constructed with ObjectPath. To facilitate
+    a common use-case, a special value '$.__iota' is made available within
+    ObjectPath for this operation; this is removed afterwards from the object.
+    The `$.__iota` value is equal to the zero-indexed line-number of the object.
+    """
+    DD = Deduper(selector=sel) if sel else None
+    iotify = lambda d, j: dict(list(d.items()) + [("__iota", j)])
+    i = 0
+    for obj in iterator:
+        if sel and DD.search_priors(l, obj):
+            continue  # i is not incremented for deduped items.
+        obj = iotify(obj, i)  # shallow copy
+        T = objectpath.Tree(obj)
+        obj[key] = T.execute(value_expression)
+        i += 1
+        yield obj
+
+
 def extract(iterator, expression, sel=''):
     "Extract uses an objectpath query to extract information from records."
     DD = Deduper(selector=sel) if sel else None
@@ -239,7 +283,7 @@ def extract(iterator, expression, sel=''):
             continue
         T = objectpath.Tree(obj)
         val = T.execute(expression)
-        if val:
+        if val is not None:
             yield val
 
 
@@ -339,6 +383,27 @@ def _main():
                       help="Optional headers to emit at start of CSV file.")
     csvm.add_argument("file1", type=argparse.FileType("r"),
                        help="File to read from")
+    # == Iota Mode ==
+    iotam = SP.add_parser("iota", help="Dynamically add a key:value pair to each object")
+    iotam.set_defaults(func=iota_cmd)
+    iotam.add_argument("key", type=str, help=_dd(
+                       "Key to add new value as. May overwrite other keys."))
+    iotam.add_argument("value_expression", type=str, help=_dd(
+                        """Objectpath selector that can construct the new
+                        value. This selector may assume the existence of a
+                        special key, `$.__iota`, which is equal to the
+                        (zero-indexed) position of the object in the JSON-Lines
+                        file. So, the value will be `0` for the first object,
+                        and `9` for the tenth object, etc.
+                        """))
+    iotam.add_argument("-s", "--selector", default='', type=str, help=_dd(
+                       """Objectpath selector to extract a representative, \
+                       unique string from JSON objects for deduplication. \
+                       If empty, deduping is not performed in this mode."""))
+    iotam.add_argument("file1", type=argparse.FileType("r"),
+                       help="File to read from")
+
+    # iota_cmd(file1, key, value_expression, selector='', **_)
     # == Execute ==
     args = P.parse_args()
     try:
