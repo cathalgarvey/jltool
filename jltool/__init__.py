@@ -231,24 +231,12 @@ def csv_cmd(file1, expressions=[], headers=[], selector='', **_):
         csvout.writerow(row)
 
 
-def iota(iterator, key, expression):
-    for l, obj in enumerate(iterator):
-        objcpy = obj.copy()
-        objcpy['__iota'] = l
-        T = objectpath.Tree(objcpy)
-        val = T.execute(expression)
-        objcpy[key] = val
-        objcpy.pop('__iota')
-        yield objcpy
-
-
-
 def iota_cmd(file1, key, value_expression, selector='', **_):
     obj_stream = load_jsonlines(file1)
     for obj in iota(obj_stream, key, value_expression, sel=selector):
         line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
         print(line)
-        # BLAH
+
 
 def iota(iterator, key, value_expression, sel=''):
     """
@@ -265,7 +253,7 @@ def iota(iterator, key, value_expression, sel=''):
     DD = Deduper(selector=sel) if sel else None
     iotify = lambda d, j: dict(list(d.items()) + [("__iota", j)])
     i = 0
-    for obj in iterator:
+    for l, obj in enumerate(iterator):
         if sel and DD.search_priors(l, obj):
             continue  # i is not incremented for deduped items.
         obj = iotify(obj, i)  # shallow copy
