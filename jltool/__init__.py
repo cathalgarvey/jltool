@@ -86,15 +86,6 @@ def _indent_if(prettify: bool)->(int, None):
     return 1 if prettify else None
 
 
-def dupes_cmd(file1, selector='', prettify=False, **_):
-    "Dedupe assists in finding duplicate records, reporting duplicates by line"
-    DD = Deduper(selector=selector)
-    for seen, previous in dupes(load_jsonlines(file1), deduper=DD):
-        print("Duplicate of line {0:3} at lines: {1}".format(seen, previous))
-    else:
-        print("Found ", DD.dupes, "duplicates.")
-
-
 def dupes(record_iterator, deduper=None, selector='', prettify=False, **_):
     "Dedupe assists in finding duplicate records, reporting duplicates by line"
     DD = deduper or Deduper(selector=selector)
@@ -104,15 +95,13 @@ def dupes(record_iterator, deduper=None, selector='', prettify=False, **_):
             yield seen[0], seen[1:] + [n]
 
 
-def diff_cmd(file1, file2, selector='', prettify=False, **_):
-    "Print successive lines unique to the left or right file"
-    f1lines = load_jsonlines(file1)
-    f2lines = load_jsonlines(file2)
-    for drxn, (lno, line) in diff(f1lines, f2lines, selector):
-        pl = json.dumps(line, indent=_indent_if(prettify), sort_keys=True)
-        for ln in pl.splitlines():
-            dirlns = "<<<" if drxn == "L" else ">>>"
-            print("{0}{1:4}:".format(dirlns, lno), ln)
+def dupes_cmd(file1, selector='', prettify=False, **_):
+    "Dedupe assists in finding duplicate records, reporting duplicates by line"
+    DD = Deduper(selector=selector)
+    for seen, previous in dupes(load_jsonlines(file1), deduper=DD):
+        print("Duplicate of line {0:3} at lines: {1}".format(seen, previous))
+    else:
+        print("Found ", DD.dupes, "duplicates.")
 
 
 def diff(iterator1, iterator2, selector=''):
@@ -136,6 +125,17 @@ def diff(iterator1, iterator2, selector=''):
         yield "L", (lineno, line)
     for lineno, line in sorted([f2hashed[h] for h in f2only]):
         yield "R", (lineno, line)
+
+
+def diff_cmd(file1, file2, selector='', prettify=False, **_):
+    "Print successive lines unique to the left or right file"
+    f1lines = load_jsonlines(file1)
+    f2lines = load_jsonlines(file2)
+    for drxn, (lno, line) in diff(f1lines, f2lines, selector):
+        pl = json.dumps(line, indent=_indent_if(prettify), sort_keys=True)
+        for ln in pl.splitlines():
+            dirlns = "<<<" if drxn == "L" else ">>>"
+            print("{0}{1:4}:".format(dirlns, lno), ln)
 
 
 def report_cmd(file1, selector='', **_):
@@ -167,13 +167,6 @@ def report_cmd(file1, selector='', **_):
             print("Inconsistent types for key '{0}': {1}".format(key, values))
 
 
-def clean_cmd(file1, selector='', **_):
-    "Deduplicate, order, and minimise objects in a JSONL file"
-    for obj in dedupe(load_jsonlines(file1), selector=selector):
-        line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
-        print(line)
-
-
 def dedupe(iterator, selector=''):
     """
     Yield deduped objects from iterator, with optional selector to detect dupes
@@ -185,9 +178,9 @@ def dedupe(iterator, selector=''):
         yield obj
 
 
-def grep_cmd(file1, expression='', selector='', **_):
-    "Print lines matching expression from file1"
-    for obj in grep(load_jsonlines(file1), expression, selector):
+def clean_cmd(file1, selector='', **_):
+    "Deduplicate, order, and minimise objects in a JSONL file"
+    for obj in dedupe(load_jsonlines(file1), selector=selector):
         line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
         print(line)
 
@@ -203,6 +196,25 @@ def grep(iterator, expression, sel=''):
         assert isinstance(val, bool), "Expression must evaluate to Boolean"
         if val:
             yield obj
+
+
+def grep_cmd(file1, expression='', selector='', **_):
+    "Print lines matching expression from file1"
+    for obj in grep(load_jsonlines(file1), expression, selector):
+        line = json.dumps(obj, separators=(",", ":"), sort_keys=True)
+        print(line)
+
+
+def extract(iterator, expression, sel=''):
+    "Extract uses an objectpath query to extract information from records."
+    DD = Deduper(selector=sel) if sel else None
+    for l, obj in enumerate(iterator):
+        if sel and DD.search_priors(l, obj):
+            continue
+        T = objectpath.Tree(obj)
+        val = T.execute(expression)
+        if val is not None:
+            yield val
 
 
 def extract_cmd(file1, expression='', selector='', **_):
@@ -259,20 +271,9 @@ def iota(iterator, key, value_expression, sel=''):
         obj = iotify(obj, i)  # shallow copy
         T = objectpath.Tree(obj)
         obj[key] = T.execute(value_expression)
+        obj.pop("__iota")
         i += 1
         yield obj
-
-
-def extract(iterator, expression, sel=''):
-    "Extract uses an objectpath query to extract information from records."
-    DD = Deduper(selector=sel) if sel else None
-    for l, obj in enumerate(iterator):
-        if sel and DD.search_priors(l, obj):
-            continue
-        T = objectpath.Tree(obj)
-        val = T.execute(expression)
-        if val is not None:
-            yield val
 
 
 def _main():
